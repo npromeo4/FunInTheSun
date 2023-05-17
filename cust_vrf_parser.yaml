@@ -1,0 +1,59 @@
+---
+- name: Convert show ip vrf output to structured format
+  hosts: routers
+  connection: ansible.netcommon.network_cli
+  gather_facts: no
+  vars:
+    cust_list: []
+    cust_vrf_names: []
+    cust_interfaces: []
+  tasks:
+
+    - name: Convert output to structured format
+      ansible.utils.cli_parse:
+        command: show vrf 
+        parser:
+          name: ansible.utils.textfsm
+      register: structured_vrf
+
+    - name: Print structured output
+      set_fact:
+        cust_list: "{{ cust_list  +  [item] }}" 
+      loop: "{{ structured_vrf['parsed'] }}"    
+      when: item['DEFAULT_RD'] is not search('<not set>') 
+
+    - name: print customers
+      ansible.builtin.debug:
+        var: cust_list
+
+
+    - name: Gather Customer VRF names
+      set_fact:
+        cust_vrf_names: "{{cust_vrf_names + [item['NAME']] }}"
+      loop: "{{ cust_list }}"
+
+    - name: print cust VRF names
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} {{ cust_vrf_names }}"
+
+    - name: Gather Customer Interfaces
+      set_fact:
+        cust_interfaces: "{{cust_interfaces + [item['INTERFACES']] }}"
+      loop: "{{ cust_list }}"
+
+    - name: print cust interfaces 
+      ansible.builtin.debug:
+        var: cust_interfaces
+
+
+
+
+
+
+
+
+
+
+
+
+
