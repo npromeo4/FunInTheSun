@@ -1,0 +1,45 @@
+---
+- name: Upgrade Cisco IOS Images
+  hosts: routers
+  vars:
+    upgrade_ios_version: "17.09.01a"
+    upgrade_model_type: "ISR4331/K9"
+#Make sure you change the upgrade_model_type to the model you're trying to upgrade to. Refer to the host_vars dir for exact model names
+
+  tasks:
+    - name: Check Current Version
+      ios_facts:
+      register: output
+
+    - debug:
+        var: output
+
+    - debug:
+        msg:
+          - "Current version is {{ ansible_net_version }}"
+          - "Upgrade image is {{ upgrade_ios_version }}"
+
+    - debug:
+        msg:
+          - "Image is not compliant and will be upgraded"
+      when:
+        - ansible_net_version != upgrade_ios_version
+        - ansible_net_model == upgrade_model_type
+
+    - name: Copy Image
+      cisco.ios.ios_command:
+        commands:
+        - command: "copy scp://ptf_admin@10.0.251.17//home/ptf_admin/Downloads/isr4300-universalk9.17.09.01a.SPA.bin bootflash:"
+          check_all: True
+          prompt:
+            - "Destination filename"
+            - "Password: "
+          answer:
+            - "{{ upgrade_ios_version }}"
+            - "{{ ptf_admin_pass }}"
+      vars:
+        ansible_command_timeout: 90000
+      when:
+        - ansible_net_version != upgrade_ios_version
+        - ansible_net_model == upgrade_model_type
+
