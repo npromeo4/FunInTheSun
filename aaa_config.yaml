@@ -1,0 +1,35 @@
+---
+- hosts: routers
+  tasks:
+    - name: "Add TACACS server group/address/pw to host"
+      cisco.ios.ios_config:
+        lines:
+          - "address ipv4 {{ tacacs_ip }}"
+          - "key 0 {{ tacacs_key }}"
+        parents: "tacacs server {{ tacacs_server }}"
+    - name: "AAA Configs"
+      #      debugger: always
+      cisco.ios.ios_config:
+        lines:
+          - ip tacacs source-interface Loopback0
+          - aaa new-model
+          - aaa authentication login default group tacacs+ local
+          - aaa authorization console
+          - aaa authorization exec default group tacacs+ local if-authenticated
+    - name: "AAA Configs Continued..."
+      cisco.ios.ios_config:
+        lines:
+          - aaa authorization commands 15 default group tacacs+ local if-authenticated 
+          - aaa accounting update newinfo
+          - aaa accounting exec default start-stop group tacacs+
+          - aaa accounting commands 0 default start-stop group tacacs+
+          - aaa accounting commands 1 default start-stop group tacacs+
+          - aaa accounting commands 15 default start-stop group tacacs+
+          - aaa accounting network default start-stop group tacacs+
+          - aaa accounting system default start-stop group tacacs+
+          - aaa session-id common
+
+            
+            #MAKE SURE YOU TEST AGAIN BEFORE DEPLOYING TO PRODUCTION
+
+#test aaa group tacacs+ group server 
