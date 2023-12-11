@@ -1,0 +1,111 @@
+---
+- name: "We're going to gather the ints and media-types associated with them"
+  hosts: routers
+  vars:
+    interfaces: []
+    media_type: []
+    first_list: []
+    second_list: []
+  tasks:
+#be sure to clear the contents of /home/ptf_admin/dump/tclscripts/ directory before running this script  
+    - cisco.ios.ios_command:
+        commands: show interfaces | include media type is|Ethernet
+      register: output
+
+    - set_fact:
+        new_output: "{{ output.stdout_lines[0] }}"
+
+    - name: "loop through list elements and put interfaces in a list"
+      set_fact:
+        interfaces: '{{ interfaces + [item | regex_findall("^\S+")]}}'
+      loop: "{{ new_output }}" 
+      when: item | regex_findall("^\S+")
+
+    - name: "loop through list elements and put media types in a list"
+      set_fact:
+        media_type: '{{ media_type  + [item | ansible.builtin.regex_findall("\S+$")] }}'
+      loop: "{{ new_output }}"
+      when: item | regex_findall("\S+$")
+
+    - name: loop over interfaces and media-types and add tcl commands
+      ansible.builtin.blockinfile:
+        path: "/home/ptf_admin/dump/tclscripts/{{ inventory_hostname }}.txt"
+        block: "{{item | join() }}"
+        create: True
+        marker: ""
+        marker_begin: ""
+        marker_end: ""
+      loop: "{{ media_type }}"
+
+    - name: "Need to replace instances of 'SX', 'LX' with SFP"
+      ansible.builtin.replace:
+        path: "/home/ptf_admin/dump/tclscripts/{{ inventory_hostname }}.txt"
+        regexp: '\w+X$'
+        replace: 'SFP'
+
+
+    - name: "Read commands from file"
+      ansible.builtin.set_fact:
+        new_media: "{{ lookup('file', '/home/ptf_admin/dump/tclscripts/{{inventory_hostname}}.txt') | split() }}"
+
+
+    - ansible.builtin.set_fact:
+        zippy: "{{ interfaces|zip(new_media)|list }}"
+      tags: test
+
+
+    - name: This is going to be the length of zippy that we use for the iteration of EEM
+      ansible.builtin.set_fact:
+        list_count: "{{ range(3, zippy  | length*2 + 3) | list }}"
+      tags: test
+
+    - name: first list
+      ansible.builtin.set_fact:
+        first_list: "{{ first_list + [item] }}"
+      loop: "{{ list_count }}"
+      when: item % 2  == 0
+
+    - name: Second list
+      ansible.builtin.set_fact:
+        second_list: "{{ second_list + [item] }}"
+      loop: "{{ list_count }}"
+      when: item % 2  != 0
+
+    - name: format first list
+      ansible.builtin.set_fact:
+        new_first_list: "{{ new_first_list | default([]) + [ '%02d' | format(item) ] }}"
+      loop: "{{ first_list }}"
+
+    - name: format second list
+      ansible.builtin.set_fact:
+        new_second_list: "{{ new_second_list | default([]) + [ '%02d' | format(item) ] }}"
+      loop: "{{ second_list }}"
+
+
+    - name: Create zippy2
+      ansible.builtin.set_fact:
+        zippy2: "{{ interfaces|zip(new_media, new_first_list, new_second_list)|list }}"
+
+
+    - name: print first part of EEM script to disk
+      ansible.builtin.lineinfile:
+        path: "/home/ptf_admin/dump/tclscripts/{{ inventory_hostname }}final.txt"
+        line: "event manager applet configure_interfaces authorization bypass\n event syslog pattern \"%LINK-3-UPDOWN\" \n action 01 handle-error type warn\n action 01.1 cli command \"enable\" \n action 02 cli command \"configure terminal\""
+        create: True
+
+    - name: print
+      ansible.builtin.lineinfile:
+        path: "/home/ptf_admin/dump/tclscripts/{{ inventory_hostname }}final.txt"
+        line: " action {{ item.3 }} cli command \"interface {{ item.0 | join() }}\" \n action {{ item.2 }} cli command \"media-type {{ item.1 }}\""
+        create: True
+      loop: "{{ zippy2 }}"
+      delegate_to: localhost
+
+
+
+
+
+    - name: put config file on device
+      cisco.ios.ios_config:
+        src: "/home/ptf_admin/dump/tclscripts/{{ inventory_hostname }}final.txt"
+
